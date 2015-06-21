@@ -41,13 +41,10 @@ instance (Pretty var, Pretty lit, Pretty meta) => Pretty (TyCon' var lit meta) w
   pretty (TyCon n vs) = pretty n <+> hsep (map pretty vs)
 
 instance (Pretty var, Pretty lit, Pretty meta) => Pretty (Type' var lit meta) where
-  pretty (TApp n []) = pretty n
-  pretty (TApp n vs) = pretty n <+> hsep (map pretty vs)
-  pretty (TFun a b) = pretty a <+> "->" <+> pretty b
-
-instance (Pretty var, Pretty lit, Pretty meta) => Pretty (TyName' var lit meta) where
-  pretty (TNVar n) = pretty n
-  pretty (TNLit n) = pretty n
+  pretty (TVar n) = pretty n
+  pretty (TLit n) = pretty n
+  pretty TFun = "(->)"
+  pretty (TApp a b) = "(" <> pretty a <+> pretty b <> ")"
 
 instance Pretty NQName where
   pretty (NQName n) = pretty n

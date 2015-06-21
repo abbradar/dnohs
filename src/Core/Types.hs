@@ -80,23 +80,17 @@ instance SplitKey k a => SplitKey k (Ann' meta a) where
 instance Functor (Ann' meta) where
   fmap f (Ann m a) = Ann m (f a)
 
-data TyName' var lit meta = TNVar (TyVar var)
-                          | TNLit (TyLit lit)
-                          deriving (Show, Eq)
-
-instance MetaFunctor (TyName' var lit) where
-  metamap' _ (TNVar n) = TNVar n
-  metamap' _ (TNLit n) = TNLit n
-
-type TyName var lit meta = Ann meta (TyName' var lit)
-
-data Type' var lit meta = TApp (TyName var lit meta) [Type var lit meta]
-                        | TFun (Type var lit meta) (Type var lit meta)
+data Type' var lit meta = TVar (TyVar var)
+                        | TLit (TyLit lit)
+                        | TFun
+                        | TApp (Type var lit meta) (Type var lit meta)
                         deriving (Show, Eq)
 
 instance MetaFunctor (Type' var lit) where
-  metamap' f (TApp n ts) = TApp (metamap f n) (map (metamap f) ts)
-  metamap' f (TFun a b) = TFun (metamap f a) (metamap f b)
+  metamap' _ (TVar v) = TVar v
+  metamap' _ (TLit l) = TLit l
+  metamap' _ TFun = TFun
+  metamap' f (TApp a b) = TApp (metamap f a) (metamap f b)
 
 type Type var lit meta = Ann meta (Type' var lit)
 
@@ -109,7 +103,7 @@ instance MetaFunctor (TyCon' var lit) where
 type TyCon var lit meta = Ann meta (TyCon' var lit)
 
 data TyDecl' var lit meta = TyDecl (TyLit lit) [TyVar var] [TyCon var lit meta]
-                          deriving (Show, Eq)
+                              deriving (Show, Eq)
 
 instance MetaFunctor (TyDecl' var lit) where
   metamap' f (TyDecl n ts cs) = TyDecl n ts (map (metamap f) cs)
@@ -158,7 +152,6 @@ type Expr var lit meta = Ann meta (Expr' var lit)
 
 type Types var lit meta = IndexedSet (TyLit lit) (TyDecl var lit meta)
 
-type NTyName meta = TyName Name Name meta
 type NType meta = Type Name Name meta
 type NTyCon meta = TyCon Name Name meta
 type NTyDecl meta = TyDecl Name Name meta

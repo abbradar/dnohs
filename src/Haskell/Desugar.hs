@@ -90,7 +90,7 @@ makeTuple n = decl
         ann = Ann (Pos 0 0)
         decl = ann $ TyDecl name vars constrs
         constrs = [ann $ TyCon name tvars]
-        tvars = map (\v -> ann $ TApp (ann $ TNVar v) []) vars
+        tvars = map (ann . TVar) vars
 
 desugar :: HsTopsP -> Compiler Desugared
 desugar defs = do

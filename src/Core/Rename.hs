@@ -54,12 +54,10 @@ indexVals = foldM insertTy def
 
 checkType :: NTypes a -> NQType -> Compiler ()
 checkType typs = chk
-  where chk (Ann _ (TApp (Ann pos n) ps)) = do
-          case n of
-           TNVar _ -> return ()
-           TNLit l -> unless (l `I.member` typs) $ throwCError pos "Undefined type literal"
-          mapM_ chk ps
-        chk (Ann _ (TFun a b)) = chk a >> chk b
+  where chk (Ann _ (TVar _)) = return ()
+        chk (Ann pos (TLit l)) = unless (l `I.member` typs) $ throwCError pos "Undefined type literal"
+        chk (Ann _ TFun) = return ()
+        chk (Ann _ (TApp a b)) = chk a >> chk b
 
 renameTypes :: NQTypes -> Compiler QTypes
 renameTypes typs = typs & I.itraverseSet %%~ rn
@@ -77,16 +75,14 @@ renameTypes typs = typs & I.itraverseSet %%~ rn
 
         rnPar :: Map (TyVar Name) (TyVar QName) -> NQType -> Compiler (Type QName Name Pos)
         rnPar subst (Ann pos par) = Ann pos <$> case par of
-          TApp (Ann pos' n) ps -> do
-            n' <- case n of
-              TNVar v -> case M.lookup v subst of
-                Just nv -> return $ TNVar nv
-                Nothing -> throwCError pos' "Undefined type variable"
-              TNLit l -> do
-                unless (l `I.member` typs) $ throwCError pos' "Undefined type literal"
-                return $ TNLit l
-            TApp (Ann pos' n') <$> mapM (rnPar subst) ps
-          TFun a b -> TFun <$> rnPar subst a <*> rnPar subst b
+          TVar v -> case M.lookup v subst of
+            Just nv -> return $ TVar nv
+            Nothing -> throwCError pos "Undefined type variable"
+          TLit l -> do
+            unless (l `I.member` typs) $ throwCError pos "Undefined type literal"
+            return $ TLit l
+          TFun -> return TFun
+          TApp a b -> TApp <$> rnPar subst a <*> rnPar subst b
 
 buildConstrs :: NQTypes -> Compiler Constrs
 buildConstrs = liftM (S.fromList . M.keys) . indexVals . concatMap getConstrs . I.toList

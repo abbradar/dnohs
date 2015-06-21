@@ -15,12 +15,8 @@ module Core.Monad
        , MonadError(..)
        ) where
 
-import Control.Applicative
 import Control.Monad.State
 import Control.Monad.Except
-import Data.Set (Set)
-import qualified Data.Set as S
-import Control.Lens
 
 import Core.Types
 

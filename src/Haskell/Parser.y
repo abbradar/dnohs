@@ -85,20 +85,17 @@ TopTypes : TypeTerm TopTypes       { $1 : $2 }
       | {- empty -}                { [] }
 
 Type :: { HsType Pos }
-Type : Type '->' Type               { replace $1 $ TFun $1 $3 }
-     | TyName TypeApp              { replace $1 $ TApp $1 $2 }
-
-TyName :: { HsTyName Pos }
-TyName : val                       { annPos $1 $ TNVar $ extract $1 }
-       | con                       { annPos $1 $ TNLit $ extract $1 }
-
-TypeApp :: { [HsType Pos] }
-TypeApp : TypeTerm TypeApp         { $1 : $2 }
-        | {- empty -}              { [] }
+Type : Type '->' Type              { replace $1 $ TApp (replace $1 $ TApp (annPos $2 TFun) $1) $3 }
+     | TypeApp                     { $1 }
 
 TypeTerm :: { HsType Pos }
-TypeTerm : TyName                  { replace $1 $ TApp $1 [] }
+TypeTerm : val                     { annPos $1 $ TVar $ extract $1 }
+         | con                     { annPos $1 $ TLit $ extract $1 }
          | '(' Type ')'            { $2 }
+
+TypeApp :: { HsType Pos }
+TypeApp : TypeApp TypeTerm         { replace $1 $ TApp $1 $2 }
+        | TypeTerm                 { $1 }
 
 Let :: { HsLet Pos }
 Let : val '::' Type                 { annPos $1 $ LAnn (extract $1) $3 }

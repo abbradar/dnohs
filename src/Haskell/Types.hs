@@ -5,7 +5,6 @@ import Core.Types
 
 import Data.IndexedSet (IndexKey(..), SplitKey(..))
 
-type HsTyName meta = NTyName meta
 type HsType meta = NType meta
 type HsTyCon meta = NTyCon meta
 type HsTyDecl meta = NTyDecl meta
