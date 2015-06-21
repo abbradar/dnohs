@@ -5,7 +5,8 @@ let
   inherit (nixpkgs) pkgs;
 
   f = { mkDerivation, alex, array, base, bytestring, containers
-      , happy, lens, mtl, stdenv, text, transformers
+      , happy, lens, mtl, stdenv, text, transformers, data-default-generics
+      , wl-pprint-text
       }:
       mkDerivation {
         pname = "dnohs";
@@ -15,6 +16,7 @@ let
         isExecutable = true;
         buildDepends = [
           array base bytestring containers lens mtl text transformers
+          data-default-generics wl-pprint-text
         ];
         buildTools = [ alex happy ];
         license = stdenv.lib.licenses.bsd3;

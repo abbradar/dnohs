@@ -1,16 +1,8 @@
 {
 module Haskell.Parser
-       ( HsTopsP
-       , HsTop(..)
-       , _TELet, _TEData
-       , HsTopLet(..)
-       , HsExpr(..)
-       , HsLet(..)
-       , HsPat(..)
-       , parseHaskell
+       ( parseHaskell
        ) where
 
-import Control.Lens
 import Data.Monoid
 import Data.Text (Text)
 import qualified Data.Text.Lazy as TL
@@ -21,6 +13,7 @@ import qualified Data.ByteString.Lazy as BL
 import Core.Types
 import Core.Rename
 import Haskell.Lexer
+import Haskell.Types
 
 }
 
@@ -70,20 +63,15 @@ Tops : Top ';' Tops                { $1 : $3 }
      | {- empty -}                 { [] }
 
 Top :: { HsTop Pos }
-Top : TopLet                       { TELet $1 }
+Top : Let                          { TELet $1 }
     | TyDecl                       { TEData $1 }
 
-TopLet :: { HsTopLet Pos }
-TopLet : val '=' Expr              { annPos $1 $ TLBind (extract $1) [] $3 }
-       | val '::' Type              { annPos $1 $ TLAnn (extract $1) $3 }
-       | val TopPats '=' Expr      { annPos $1 $ TLBind (extract $1) $2 $4 }
-
 TyDecl :: { HsTyDecl Pos }
-TyDecl : data con TyVarNames '=' TyCons { annPos $1 $ TyDecl (extract $2) $3 $5 } 
+TyDecl : data con TyVars '=' TyCons { annPos $1 $ TyDecl (extract $2) $3 $5 } 
 
-TyVarNames :: { [TyVarName] }
-TyVarNames : val TyVarNames        { extract $1 : $2 }
-           | {- empty -}           { [] }
+TyVars :: { [TyVar Name] }
+TyVars : val TyVars                { extract $1 : $2 }
+       | {- empty -}               { [] }
 
 TyCons :: { [HsTyCon Pos] }
 TyCons : TyCon '|' TyCons          { $1 : $3 }
@@ -114,12 +102,11 @@ TypeTerm : TyName                  { replace $1 $ TApp $1 [] }
 
 Let :: { HsLet Pos }
 Let : val '::' Type                 { annPos $1 $ LAnn (extract $1) $3 }
-    | val TopPats '=' Expr         { annPos $1 $ LFun (extract $1) $2 $4 }
-    | Pat '=' Expr                 { replace $1 $ LPat $1 $3 }
+    | val TopPats '=' Expr         { annPos $1 $ LBind (extract $1) $2 $4 }
 
 TopPats :: { [HsPat Pos] }
 TopPats : TopPat TopPats           { $1 : $2 }
-        | TopPat                   { [$1] }
+        | {- empty -}              { [] }
 
 TopPat :: { HsPat Pos }
 TopPat : OnePat                    { $1 }
@@ -135,7 +122,7 @@ OnePat : val                       { annPos $1 $ HPVar (extract $1) }
        | '(' Pat ')'               { $2 }
 
 Expr :: { HsExpr Pos }
-  : Expr '::' Type                       { replace $1 $ HTypeAnn $3 $1 }
+  : Expr '::' Type                       { replace $1 $ HTyAnn $3 $1 }
   | BeginLet let '{' Lets '}' in Expr   { annPos $2 $ HLet $4 $7 }
   | case Expr BeginCase of '{' Alts '}' { annPos $1 $ HCase $2 $6 }
   | ExprApp                             { $1 }
@@ -155,7 +142,7 @@ Alts : Pat '->' Expr ';' Alts       { ($1, $3) : $5 }
          | {- empty -}             { [] }
 
 ExprApp :: { HsExpr Pos }
-  : ExprApp ExprTerm               { replace $1 $ HApply $1 $2 }
+  : ExprApp ExprTerm               { replace $1 $ HApp $1 $2 }
   | ExprTerm                       { $1 }
 
 ExprTerm :: { HsExpr Pos }
@@ -180,66 +167,17 @@ extract (Posed _ p) = extract' p
 class FromToken t where
   extract' :: Token' -> t
 
-instance FromToken TyVarName where
-  extract' (TVal t) = TyVarName t
+instance FromToken (TyVar Name) where
+  extract' (TVal t) = TyVar t
 
-instance FromToken TyLitName where
-  extract' (TCon t) = TyLitName t
+instance FromToken (TyLit Name) where
+  extract' (TCon t) = TyLit t
 
-instance FromToken ValLitName where
-  extract' (TCon t) = ValLitName t
+instance FromToken (ValLit Name) where
+  extract' (TCon t) = ValLit t
 
-instance FromToken ValVarName where
-  extract' (TVal t) = ValVarName t
-
-type HsTyName meta = TyName meta TyVarName TyLitName
-
-type HsType meta = Type meta TyVarName TyLitName
-
-type HsTyCon meta = TyCon meta TyVarName TyLitName
-
-type HsTyDecl meta = TyDecl meta TyVarName TyLitName
-
-data HsPat' meta = HPVar ValVarName
-                 | HPWildCard
-                 | HPCon ValLitName [HsPat meta]
-                 deriving (Show, Eq)
-
-type HsPat meta = Ann meta HsPat'
-
-data HsLet' meta = LAnn ValVarName (HsType meta)
-                 | LFun ValVarName [HsPat meta] (HsExpr meta)
-                 | TLBind ValVarName [HsPat meta] (HsExpr meta)
-                 | LPat (HsPat meta) (HsExpr meta)
-                 deriving (Show, Eq)
-
-type HsLet meta = Ann meta HsLet'
-
-type HsAlts meta = [(HsPat meta, HsExpr meta)]
-
-data HsExpr' meta = HLet [HsLet meta] (HsExpr meta)
-                  | HCase (HsExpr meta) (HsAlts meta)
-                  | HVar ValVarName
-                  | HLit ValLitName
-                  | HApply (HsExpr meta) (HsExpr meta)
-                  | HTypeAnn (HsType meta) (HsExpr meta)
-                  deriving (Show, Eq)
-
-type HsExpr meta = Ann meta HsExpr'
-
-data HsTopLet' meta = TLAnn ValVarName (HsType meta)
-                    | TLBind ValVarName [HsPat meta] (HsExpr meta)
-                    deriving (Show, Eq)
-
-type HsTopLet meta = Ann meta HsTopLet'
-
-data HsTop meta = TELet (HsTopLet meta)
-                | TEData (HsTyDecl meta)
-                deriving (Show, Eq)
-
-makePrisms ''HsTop
-
-type HsTopsP = [HsTop Pos]
+instance FromToken (ValVar Name) where
+  extract' (TVal t) = ValVar t
 
 annPos :: Token -> a -> Ann' Pos a
 annPos t = Ann $ tpos t

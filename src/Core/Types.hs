@@ -2,11 +2,44 @@
 module Core.Types where
 
 import Data.Text (Text)
+import qualified Data.Text as T
+import Data.Monoid
 import Control.Lens
+import Text.PrettyPrint.Leijen.Text (Pretty)
 
-import Data.IndexedSet (IndexKey(..), SplitKey(..))
+import Data.IndexedSet (IndexedSet, IndexKey(..), SplitKey(..))
 
 type Name = Text
+
+class TempVar a where
+  tempNum :: Int -> a
+
+instance TempVar Text where
+  tempNum n = "a_" <> T.pack (show n)
+
+newtype TyVar n = TyVar n
+                deriving (Show, Eq, Ord, TempVar, Pretty)
+
+instance Functor TyVar where
+  fmap f (TyVar n) = TyVar (f n)
+
+newtype TyLit n = TyLit n
+                deriving (Show, Eq, Ord, TempVar, Pretty)
+
+instance Functor TyLit where
+  fmap f (TyLit n) = TyLit (f n)
+
+newtype ValLit n = ValLit n
+                 deriving (Show, Eq, Ord, TempVar, Pretty)
+
+instance Functor ValLit where
+  fmap f (ValLit n) = ValLit (f n)
+
+newtype ValVar n = ValVar n
+                 deriving (Show, Eq, Ord, TempVar, Pretty)
+
+instance Functor ValVar where
+  fmap f (ValVar n) = ValVar (f n)
 
 -- | Bound variable with name and unique number to identify.
 -- | The number is guaranteed to be unique for the whole tree.
@@ -25,66 +58,121 @@ data Ann' meta a = Ann { _metainfo :: meta
                        }
                  deriving (Show, Eq)
 
+type Ann meta tree = Ann' meta (tree meta)
+
 makeLenses ''Ann'
+
+type MetaAnn a meta = Ann meta a
+
+class MetaFunctor f where
+  metamap' :: (meta1 -> meta2) -> f meta1 -> f meta2
+
+metamap :: MetaFunctor f => (meta1 -> meta2) -> Ann meta1 f -> Ann meta2 f
+metamap f (Ann meta a) = Ann (f meta) (metamap' f a)
 
 instance IndexKey k a => IndexKey k (Ann' meta a) where
   toIndex (Ann _ a) = toIndex a
 
 instance SplitKey k a => SplitKey k (Ann' meta a) where
   type WithoutKey k (Ann' meta a) = Ann' meta (WithoutKey k a)
-  splitKey = iso (\(Ann' m a) -> (m, a^.splitKey)) (\(m, a) -> Ann' m (a^.from splitKey))
+  splitKey = iso (\(Ann m (view splitKey -> (k, a))) -> (k, Ann m a)) (\(k, Ann m a) -> Ann m $ (k, a) ^. from splitKey)
   
 instance Functor (Ann' meta) where
   fmap f (Ann m a) = Ann m (f a)
 
-type Ann meta tree = Ann' meta (tree meta)
-
-data TyName' var lit meta = TNVar var
-                          | TNLit lit
+data TyName' var lit meta = TNVar (TyVar var)
+                          | TNLit (TyLit lit)
                           deriving (Show, Eq)
 
-type TyName meta var lit = Ann meta (TyName' var lit)
+instance MetaFunctor (TyName' var lit) where
+  metamap' _ (TNVar n) = TNVar n
+  metamap' _ (TNLit n) = TNLit n
 
-data Type' var lit meta = TApp (TyName meta var lit) [Type meta var lit]
-                        | TFun (Type meta var lit) (Type meta var lit)
+type TyName var lit meta = Ann meta (TyName' var lit)
+
+data Type' var lit meta = TApp (TyName var lit meta) [Type var lit meta]
+                        | TFun (Type var lit meta) (Type var lit meta)
                         deriving (Show, Eq)
 
-type Type meta var lit = Ann meta (Type' var lit)
+instance MetaFunctor (Type' var lit) where
+  metamap' f (TApp n ts) = TApp (metamap f n) (map (metamap f) ts)
+  metamap' f (TFun a b) = TFun (metamap f a) (metamap f b)
 
-data TyCon' var lit meta = TyCon lit [Type meta var lit]
+type Type var lit meta = Ann meta (Type' var lit)
+
+data TyCon' var lit meta = TyCon (TyLit lit) [Type var lit meta]
                          deriving (Show, Eq)
 
-type TyCon meta var lit = Ann meta (TyCon' var lit)
+instance MetaFunctor (TyCon' var lit) where
+  metamap' f (TyCon n ts) = TyCon n (map (metamap f) ts)
 
-data TyDecl' var lit meta = TyDecl lit [var] [TyCon meta var lit]
-                          deriving (Show, Eq, IndexKey)
+type TyCon var lit meta = Ann meta (TyCon' var lit)
 
-instance SplitKey lit (TyDecl' var lit meta) where
-  type WithoutKey lit (TyDecl' var lit meta) = ([var], [TyCon meta var lit])
-  splitKey = iso (\(TyDecl k a b) -> (k, (a, b))) (\(k, (a, b)) -> TyDecl k a b)
+data TyDecl' var lit meta = TyDecl (TyLit lit) [TyVar var] [TyCon var lit meta]
+                          deriving (Show, Eq)
 
-type TyDecl meta var lit = Ann meta (TyDecl' var lit)
+instance MetaFunctor (TyDecl' var lit) where
+  metamap' f (TyDecl n ts cs) = TyDecl n ts (map (metamap f) cs)
 
-data Pat' var lit meta = PVar var
-                       | PCon lit [Pat meta var lit]
+instance IndexKey (TyLit lit) (TyDecl' var lit meta) where
+
+data TyDeclD var lit meta = TyDeclD [TyVar var] [TyCon var lit meta]
+
+instance MetaFunctor (TyDeclD var lit) where
+  metamap' f (TyDeclD ts cs) = TyDeclD ts (map (metamap f) cs)
+
+instance SplitKey (TyLit lit) (TyDecl' var lit meta) where
+  type WithoutKey (TyLit lit) (TyDecl' var lit meta) = TyDeclD var lit meta
+  splitKey = iso (\(TyDecl k a b) -> (k, TyDeclD a b)) (\(k, TyDeclD a b) -> TyDecl k a b)
+
+type TyDecl var lit meta = Ann meta (TyDecl' var lit)
+
+data Pat' var lit meta = PVar (ValVar var)
+                       | PCon (ValLit lit) [Pat var lit meta]
                        deriving (Show, Eq)
 
-type Pat meta var lit = Ann meta (Pat' var lit)
+instance MetaFunctor (Pat' var lit) where
+  metamap' _ (PVar n) = PVar n
+  metamap' f (PCon n ps) = PCon n (map (metamap f) ps)
 
-type Alts meta var lit = [(Pat meta var lit, Expr meta var lit)]
+type Pat var lit meta = Ann meta (Pat' var lit)
+
+type Alts var lit meta = [(Pat var lit meta, Expr var lit meta)]
 
 -- | Generic scoped untyped lambda calculus with free variables' type 'var', --   literals 'lit' and metadata 'meta'.
-data Expr' var lit meta = Var var
-                        | Lit lit
-                        | Abs var (Expr meta var lit)
-                        | App (Expr meta var lit) (Expr meta var lit)
-                        | Case (Expr meta var lit) (Alts meta var lit)
+data Expr' var lit meta = Var (ValVar var)
+                        | Lit (ValLit lit)
+                        | Abs (ValVar var) (Expr var lit meta)
+                        | App (Expr var lit meta) (Expr var lit meta)
+                        | Case (Expr var lit meta) (Alts var lit meta)
                         deriving (Show, Eq)
 
-type Expr meta var lit = Ann meta (Expr' var lit)
+instance MetaFunctor (Expr' var lit) where
+  metamap' _ (Var n) = Var n
+  metamap' _ (Lit n) = Lit n
+  metamap' f (Abs n e) = Abs n (metamap f e)
+  metamap' f (App a b) = App (metamap f a) (metamap f b)
+  metamap' f (Case e alts) = Case (metamap f e) (map (\(p, pe) -> (metamap f p, metamap f pe)) alts)
+
+type Expr var lit meta = Ann meta (Expr' var lit)
+
+type Types var lit meta = IndexedSet (TyLit lit) (TyDecl var lit meta)
+
+type NTyName meta = TyName Name Name meta
+type NType meta = Type Name Name meta
+type NTyCon meta = TyCon Name Name meta
+type NTyDecl meta = TyDecl Name Name meta
+type NTypes meta = Types Name Name meta
 
 -- | Position in a file, used for errors reporting until the typecheck succeeds.
 data Pos = Pos { line :: !Int
                , col :: !Int
                }
          deriving (Show, Eq)
+
+data Program var lit tvar tlit tmeta emeta =
+  Program { progTypes :: IndexedSet (TyLit tlit) (TyDecl tvar tlit tmeta)
+          , progExpr :: Expr var lit emeta
+          }
+  deriving (Show, Eq)
+

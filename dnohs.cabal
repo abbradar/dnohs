@@ -22,16 +22,29 @@ executable dnohs
   -- other-extensions:    
   build-depends:       base >=4.7 && <4.9
                      , bytestring
+                     , array
                      , text
                      , containers
+                     , transformers
                      , mtl
                      , lens
                      , data-default-generics
+                     , wl-pprint-text
   default-extensions:  RankNTypes
                      , OverloadedStrings
                      , ViewPatterns
                      , MultiParamTypeClasses
+                     , TupleSections
+                     , DefaultSignatures
+                     , TypeFamilies
+                     , GeneralizedNewtypeDeriving
+                     , ScopedTypeVariables
+                     , FlexibleContexts
+                     , FlexibleInstances
+                     , TemplateHaskell
+                     , LambdaCase
   build-tools:         alex
                      , happy
+  ghc-options:         -Wall -fno-warn-orphans
   hs-source-dirs:      src
   default-language:    Haskell2010

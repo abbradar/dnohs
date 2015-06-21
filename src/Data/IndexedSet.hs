@@ -3,21 +3,22 @@ module Data.IndexedSet
        , SplitKey(..)
          
        , IndexedSet
+       , (!)
        , empty
        , null
-       , (!)
+       , member
        , lookup
        , insert
        , delete
        , itraverseSet
+       , toList
        , fromList
        ) where
 
-import Control.Arrow
-import Data.Proxy
+import Prelude hiding (null, lookup)
 import Data.Map (Map)
 import qualified Data.Map as M
-import Data.Default
+import Data.Default.Generics
 import Control.Lens
 
 class IndexKey k a where
@@ -29,33 +30,51 @@ class IndexKey k a => SplitKey k a where
   type WithoutKey k a
   splitKey :: Iso' a (k, WithoutKey k a)
 
-newtype IndexedSet k a = ISet (Map k a)
-                        deriving (Show, Eq, Default)
+splitKey' :: (SplitKey k1 a, SplitKey k2 b) => Iso a b (k1, WithoutKey k1 a) (k2, WithoutKey k2 b)
+splitKey' = iso (^.splitKey) (^.from splitKey)
 
-_indexedSet :: Lens (IndexedSet k a) (IndexedSet k' a') (Map k a) (Map k' a')
-_indexedSet = lens (\(ISet x) -> x) ISet
+newtype IndexedSet k a = ISet (Map k a)
+                        deriving (Eq, Default)
+
+instance Show a => Show (IndexedSet k a) where
+  show m = "fromList " ++ show (toList m)
+
+_indexedSet :: Iso (IndexedSet k a) (IndexedSet k' a') (Map k a) (Map k' a')
+_indexedSet = iso (\(ISet x) -> x) ISet
 
 type instance Index (IndexedSet k a) = k
 type instance IxValue (IndexedSet k a) = WithoutKey k a
 
-instance SplitKey k a => Ixed (IndexedSet k a) where
-  ix k = _indexedSet . ix k . splitKey . _2
+instance (SplitKey k a, Ord k) => Ixed (IndexedSet k a) where
+  -- ugh... types can bite!
+  ix k = _indexedSet . ix k . (splitKey :: Traversal' a (k, WithoutKey k a)) . __2
+    where __2 :: Lens' (a', b') b'
+          __2 = _2
 
-instance SplitKey k a => At (IndexedSet k a) where
-  at k = _indexedSet . at k . lens (fmap $ snd . view splitKey) (const $ fmap $ view (from splitKey) . (k, ))
+instance (SplitKey k a, Ord k) => At (IndexedSet k a) where
+  at k = _indexedSet . at k . lns
+    where lns :: Lens' (Maybe a) (Maybe (WithoutKey k a))
+          lns = lens (fmap $ snd . view _splitKey) (const $ fmap $ back . (k, ))
+          _splitKey :: Iso' a (k, WithoutKey k a)
+          _splitKey = splitKey
+          back :: (k, WithoutKey k a) -> a
+          back = view (from _splitKey)
 
 (!) :: Ord k => IndexedSet k a -> k -> a
 (ISet m) ! k = m M.! k
 
 infixl 9 !
 
-empty :: IndexedMultiSet k a
+empty :: IndexedSet k a
 empty = def
 
-null :: IndexedMultiSet k a -> Bool
+null :: IndexedSet k a -> Bool
 null (ISet m) = M.null m
 
-lookup :: Ord k => k -> IndexedMultiSet k a -> [a]
+member :: Ord k => k -> IndexedSet k a -> Bool
+member k (ISet m) = k `M.member` m
+
+lookup :: Ord k => k -> IndexedSet k a -> Maybe a
 lookup k (ISet m) = k `M.lookup` m
 
 insert :: (Ord k, IndexKey k a) => a -> IndexedSet k a -> IndexedSet k a
@@ -64,8 +83,18 @@ insert a (ISet m) = ISet $ M.insert (toIndex a) a m
 delete :: (Ord k, IndexKey k a) => a -> IndexedSet k a -> IndexedSet k a
 delete a (ISet m) = ISet $ M.delete (toIndex a) m
 
-itraverseSet :: (SplitKey k a, SplitKey k b) => IndexedTraversal k (IndexedSet k a) (IndexedSet k b) (WithoutKey k a) (WithoutKey k b)
-itraverseSet = _indexedSet . itraverse . splitKey . _2
+itraverseSet :: forall k a b. (SplitKey k a, SplitKey k b) => IndexedTraversal k (IndexedSet k a) (IndexedSet k b) (WithoutKey k a) (WithoutKey k b)
+itraverseSet = _indexedSet .> itraversed <. (splitKey' . ___2)
+  where -- I said "bite", haven't I?
+        _splitKey' :: Traversal a b (k, WithoutKey k a) (k, WithoutKey k b)
+        _splitKey' = splitKey'
+        __2 :: Lens (a', b1) (a', b2) b1 b2
+        __2 = _2
+        ___2 :: Lens (k, WithoutKey k a) (k, WithoutKey k b) (WithoutKey k a) (WithoutKey k b)
+        ___2 = __2
+
+toList :: IndexedSet k a -> [a]
+toList (ISet m) = M.elems m
 
 fromList :: (Ord k, IndexKey k a) => [a] -> IndexedSet k a
 fromList = ISet . M.fromList . map (\x -> (toIndex x, x))
