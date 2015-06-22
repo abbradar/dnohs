@@ -84,12 +84,12 @@ tupleName n = "(" <> T.replicate (n - 1) "," <> ")"
 
 makeTuple :: Int -> HsTyDecl Pos
 makeTuple n = decl
-  where name = TyLit $ tupleName n
+  where name = tupleName n
         vars = map tempNum [1..n]
 
         ann = Ann (Pos 0 0)
-        decl = ann $ TyDecl name vars constrs
-        constrs = [ann $ TyCon name tvars]
+        decl = ann $ TyDecl (TyLit name) vars constrs
+        constrs = [ann $ TyCon (ValLit name) tvars]
         tvars = map (ann . TVar) vars
 
 desugar :: HsTopsP -> Compiler Desugared

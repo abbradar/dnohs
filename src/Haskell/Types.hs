@@ -24,11 +24,11 @@ instance IndexKey (ValVar Name) (HsLet' meta)
 
 instance SplitKey (ValVar Name) (HsLet' meta) where
   type WithoutKey (ValVar Name) (HsLet' meta) = Either (HsType meta) ([HsPat meta], (HsExpr meta))
-  splitKey = iso back fwd
-    where back (LAnn n a) = (n, Left a)
-          back (LBind n a b) = (n, Right (a, b))
-          fwd (n, Left a) = LAnn n a
-          fwd (n, Right (a, b)) = LBind n a b
+  splitKey = iso fwd back
+    where fwd (LAnn n a) = (n, Left a)
+          fwd (LBind n a b) = (n, Right (a, b))
+          back (n, Left a) = LAnn n a
+          back (n, Right (a, b)) = LBind n a b
 
 type HsLet meta = Ann meta HsLet'
 

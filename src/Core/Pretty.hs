@@ -10,6 +10,7 @@ import qualified Data.IndexedSet as I
 import Core.Types
 import Core.Rename
 import Core.Typecheck
+import Core.Typed
 
 instance Pretty Text where
   pretty = pretty . TL.fromStrict
@@ -18,7 +19,11 @@ instance Pretty Pos where
   pretty (Pos l c) = "Pos" <+> pretty (l, c)
 
 instance (Pretty meta, Pretty a) => Pretty (Ann' meta a) where
-  pretty (Ann meta a) = align $ brackets (pretty meta) <$$> pretty a
+  pretty (Ann meta a)
+    | emp == "()" = pretty a
+    | otherwise = align $ brackets m <$$> pretty a
+    where m = pretty meta
+          emp = displayT $ renderOneLine m
 
 instance (Pretty var, Pretty lit, Pretty meta) => Pretty (Expr' var lit meta) where
   pretty (Var var) = pretty var
@@ -56,3 +61,10 @@ instance Pretty QName where
 instance (Pretty var, Pretty lit, Pretty tvar, Pretty tlit, Pretty meta, Pretty tmeta) =>
          Pretty (Program var lit tvar tlit meta tmeta) where
   pretty des = vsep (map pretty $ I.toList $ progTypes des) <$> empty <$> pretty (progExpr des)
+
+instance Pretty meta => Pretty (Kind' meta) where
+  pretty Star = "*"
+  pretty (KFun a b) = "(" <> pretty a <> ")" <+> "->" <+> "(" <> pretty b <> ")"
+
+instance Pretty name => Pretty (KAnn name) where
+  pretty (KName name kind) = "(" <> pretty name <+> " :: " <+> pretty kind <> ")"

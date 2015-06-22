@@ -1,7 +1,8 @@
 module Data.IndexedSet
        ( IndexKey(..)
        , SplitKey(..)
-         
+       , splitKey'
+
        , IndexedSet
        , (!)
        , empty
@@ -19,6 +20,7 @@ import Prelude hiding (null, lookup)
 import Data.Map (Map)
 import qualified Data.Map as M
 import Data.Default.Generics
+import GHC.Generics (Generic)
 import Control.Lens
 
 class IndexKey k a where
@@ -29,12 +31,14 @@ class IndexKey k a where
 class IndexKey k a => SplitKey k a where
   type WithoutKey k a
   splitKey :: Iso' a (k, WithoutKey k a)
+  default splitKey :: (k ~ a, WithoutKey a a ~ ()) => Iso' a (a, ())
+  splitKey = iso (, ()) fst
 
 splitKey' :: (SplitKey k1 a, SplitKey k2 b) => Iso a b (k1, WithoutKey k1 a) (k2, WithoutKey k2 b)
 splitKey' = iso (^.splitKey) (^.from splitKey)
 
 newtype IndexedSet k a = ISet (Map k a)
-                        deriving (Eq, Default)
+                        deriving (Eq, Default, Generic)
 
 instance Show a => Show (IndexedSet k a) where
   show m = "fromList " ++ show (toList m)

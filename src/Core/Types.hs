@@ -85,6 +85,11 @@ data Type' var lit meta = TVar (TyVar var)
                         | TFun
                         | TApp (Type var lit meta) (Type var lit meta)
                         deriving (Show, Eq)
+data Kind' meta = Star
+                | KFun (Kind meta) (Kind meta)
+                deriving (Show, Eq)
+
+type Kind meta = Ann meta Kind'
 
 instance MetaFunctor (Type' var lit) where
   metamap' _ (TVar v) = TVar v
@@ -94,7 +99,7 @@ instance MetaFunctor (Type' var lit) where
 
 type Type var lit meta = Ann meta (Type' var lit)
 
-data TyCon' var lit meta = TyCon (TyLit lit) [Type var lit meta]
+data TyCon' var lit meta = TyCon (ValLit lit) [Type var lit meta]
                          deriving (Show, Eq)
 
 instance MetaFunctor (TyCon' var lit) where
@@ -108,16 +113,24 @@ data TyDecl' var lit meta = TyDecl (TyLit lit) [TyVar var] [TyCon var lit meta]
 instance MetaFunctor (TyDecl' var lit) where
   metamap' f (TyDecl n ts cs) = TyDecl n ts (map (metamap f) cs)
 
-instance IndexKey (TyLit lit) (TyDecl' var lit meta) where
+deriving instance (NameKey lit ~ k, SplitKey k lit) => IndexKey (TyLit k) (TyDecl' var lit meta)
 
-data TyDeclD var lit meta = TyDeclD [TyVar var] [TyCon var lit meta]
+type family NameKey a
+
+type instance NameKey Name = Name
+
+data TyDeclD var lit meta = TyDeclD (WithoutKey (NameKey lit) lit) [TyVar var] [TyCon var lit meta]
 
 instance MetaFunctor (TyDeclD var lit) where
-  metamap' f (TyDeclD ts cs) = TyDeclD ts (map (metamap f) cs)
+  metamap' f (TyDeclD k ts cs) = TyDeclD k ts (map (metamap f) cs)
 
-instance SplitKey (TyLit lit) (TyDecl' var lit meta) where
-  type WithoutKey (TyLit lit) (TyDecl' var lit meta) = TyDeclD var lit meta
-  splitKey = iso (\(TyDecl k a b) -> (k, TyDeclD a b)) (\(k, TyDeclD a b) -> TyDecl k a b)
+instance (NameKey lit ~ k, SplitKey k lit) => SplitKey (TyLit k) (TyDecl' var lit meta) where
+  type WithoutKey (TyLit k) (TyDecl' var lit meta) = TyDeclD var lit meta
+  splitKey = iso fwd back
+    where fwd (TyDecl (TyLit k) a b) = (TyLit kk, TyDeclD kv a b)
+            where (kk, kv) = k^.splitKey
+          back (TyLit kk, TyDeclD kv a b) = TyDecl (TyLit k) a b
+            where k = (kk, kv)^.from splitKey
 
 type TyDecl var lit meta = Ann meta (TyDecl' var lit)
 
@@ -138,6 +151,7 @@ data Expr' var lit meta = Var (ValVar var)
                         | Lit (ValLit lit)
                         | Abs (ValVar var) (Expr var lit meta)
                         | App (Expr var lit meta) (Expr var lit meta)
+                        | Let (ValVar var) (Expr var lit meta) (Expr var lit meta)
                         | Case (Expr var lit meta) (Alts var lit meta)
                         deriving (Show, Eq)
 
@@ -164,8 +178,6 @@ data Pos = Pos { line :: !Int
          deriving (Show, Eq)
 
 data Program var lit tvar tlit tmeta emeta =
-  Program { progTypes :: IndexedSet (TyLit tlit) (TyDecl tvar tlit tmeta)
+  Program { progTypes :: IndexedSet (TyLit (NameKey tlit)) (TyDecl tvar tlit tmeta)
           , progExpr :: Expr var lit emeta
           }
-  deriving (Show, Eq)
-
