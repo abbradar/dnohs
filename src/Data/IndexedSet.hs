@@ -20,7 +20,6 @@ import Prelude hiding (null, lookup)
 import Data.Map (Map)
 import qualified Data.Map as M
 import Data.Default.Generics
-import GHC.Generics (Generic)
 import Control.Lens
 
 class IndexKey k a where
@@ -38,7 +37,7 @@ splitKey' :: (SplitKey k1 a, SplitKey k2 b) => Iso a b (k1, WithoutKey k1 a) (k2
 splitKey' = iso (^.splitKey) (^.from splitKey)
 
 newtype IndexedSet k a = ISet (Map k a)
-                        deriving (Eq, Default, Generic)
+                        deriving (Eq, Default)
 
 instance Show a => Show (IndexedSet k a) where
   show m = "fromList " ++ show (toList m)

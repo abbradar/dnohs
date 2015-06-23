@@ -15,8 +15,6 @@ import Control.Monad
 import Control.Arrow
 import Data.Map (Map)
 import qualified Data.Map as M
-import Data.Set (Set)
-import qualified Data.Set as S
 import qualified Data.IndexedSet as I
 import Control.Lens
 import Data.Default.Generics
@@ -39,7 +37,7 @@ type NQPat = Pat NQName Name NQMeta
 type NQExpr = Expr NQName Name NQMeta
 type Desugared = Program NQName Name Name Name Pos NQMeta
 
-type Constrs = Set (ValLit Name)
+type Constrs = Map (ValLit Name) Int
 
 indexVals :: ( Default f
             , Index f ~ k
@@ -54,12 +52,11 @@ indexVals = foldM insertTy def
 
 renameTypes :: NQTypes -> Compiler QTypes
 renameTypes typs = typs & I.itraverseSet %%~ rn
-  where rn :: Ann Pos (TyDeclD Name Name) -> Compiler (Ann Pos (TyDeclD QName Name))
-        rn (Ann pos (TyDeclD vars constrs)) = do
+  where rn (Ann pos (TyDeclD k vars constrs)) = do
           vars' <- mapM (\v -> (v, ) <$> renameVar' v) vars
           let subst = M.fromList vars'
           unless (length vars == M.size subst) $ throwCError pos "Duplicate type variable"
-          Ann pos <$> TyDeclD (map snd vars') <$> mapM (rnConstr subst) constrs
+          Ann pos <$> TyDeclD k (map snd vars') <$> mapM (rnConstr subst) constrs
 
         rnConstr :: Map (TyVar Name) (TyVar QName) -> NTyCon Pos -> Compiler QTyCon
         rnConstr subst (Ann pos (TyCon name pars)) = Ann pos <$> TyCon name <$> mapM (rnPar subst) pars
@@ -86,9 +83,9 @@ renameType typs = chk
           TApp a b -> TApp <$> chk a <*> chk b
 
 buildConstrs :: NQTypes -> Compiler Constrs
-buildConstrs = liftM (S.fromList . M.keys) . indexVals . concatMap getConstrs . I.toList
+buildConstrs = liftM (fmap $ view annval) . indexVals . concatMap getConstrs . I.toList
   where getConstrs (Ann _ (TyDecl _ _ constrs)) = map extr constrs
-        extr (Ann pos (TyCon name _)) = (name, Ann pos ())
+        extr (Ann pos (TyCon name vs)) = (name, Ann pos $ length vs)
 
 type Renames = Map (ValVar NQName) (ValVar QName)
 
@@ -104,7 +101,7 @@ renameExpr constrs types = tr M.empty
         tr :: Renames -> NQExpr -> Compiler QExpr
         tr names (Ann (pos, ann) l) = rnAnn pos ann <*> case l of
            Lit n -> do
-             unless (n `S.member` constrs) $ throwCError pos "Undefined constructor"
+             unless (n `M.member` constrs) $ throwCError pos "Undefined constructor"
              return $ Lit n
            Var v -> case M.lookup v names of
              Nothing -> throwCError pos "Unresolved name"
@@ -114,6 +111,11 @@ renameExpr constrs types = tr M.empty
              e' <- tr (M.insert name v names) e
              return $ Abs v e'
            App e x -> App <$> tr names e <*> tr names x
+           Let name e x -> do
+             v <- newVar name
+             e' <- tr names e
+             x' <- tr (M.insert name v names) x
+             return $ Let v e' x'
            Case e alts -> Case <$> tr names e <*> mapM (trAlt names) alts
            
         newVar (ValVar (NQName name)) = do
@@ -133,7 +135,9 @@ renameExpr constrs types = tr M.empty
             v <- newVar name
             return ([(name, Ann pos v)], PVar v)
           PCon cname vars -> do
-            unless (cname `S.member` constrs) $ throwCError pos "Undefined constructor"
+            case M.lookup cname constrs of
+             Nothing -> throwCError pos "Undefined constructor"
+             Just len -> unless (len == length vars) $ throwCError pos "Invalid number of arguments"
             (allNames, vars') <- unzip <$> mapM trPat vars
             return (concat allNames, PCon cname vars')
 

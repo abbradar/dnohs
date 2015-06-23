@@ -16,8 +16,9 @@ module Core.Monad
        ) where
 
 import Control.Monad.State
-import Control.Monad.Except
+import Control.Monad.Reader
 import Control.Monad.Writer
+import Control.Monad.Except
 
 import Core.Types
 
@@ -54,6 +55,9 @@ runCompiler :: Compiler a -> Either CompError a
 runCompiler = runExcept . flip evalStateT 0 . runCompiler'
 
 instance MonadCompiler m => MonadCompiler (StateT s m) where
+  uid = lift uid
+
+instance (Monoid s, MonadCompiler m) => MonadCompiler (ReaderT s m) where
   uid = lift uid
 
 instance (Monoid s, MonadCompiler m) => MonadCompiler (WriterT s m) where

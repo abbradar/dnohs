@@ -11,6 +11,11 @@ import Data.IndexedSet (IndexedSet, IndexKey(..), SplitKey(..))
 
 type Name = Text
 
+instance IndexKey Name Name where
+
+instance SplitKey Name Name where
+  type WithoutKey Name Name = ()
+
 class TempVar a where
   tempNum :: Int -> a
 
@@ -53,22 +58,24 @@ data Var var = VBound Bound
              deriving (Show, Eq)
 
 -- | Annotated data type.
-data Ann' meta a = Ann { _metainfo :: meta
-                       , _annval :: a
-                       }
+data Ann' meta a = Ann meta a
                  deriving (Show, Eq)
 
 type Ann meta tree = Ann' meta (tree meta)
 
-makeLenses ''Ann'
+metainfo :: Lens (Ann' meta1 a) (Ann' meta2 a) meta1 meta2
+metainfo = lens (\(Ann m _) -> m) (\(Ann _ a) m -> Ann m a)
+
+annval :: Lens (Ann' meta a1) (Ann' meta a2) a1 a2
+annval = lens (\(Ann _ a) -> a) (\(Ann m _) a -> Ann m a)
 
 type MetaAnn a meta = Ann meta a
 
-class MetaFunctor f where
-  metamap' :: (meta1 -> meta2) -> f meta1 -> f meta2
+class MetaTraversal f where
+  metamap' :: Traversal (f meta1) (f meta2) meta1 meta2
 
-metamap :: MetaFunctor f => (meta1 -> meta2) -> Ann meta1 f -> Ann meta2 f
-metamap f (Ann meta a) = Ann (f meta) (metamap' f a)
+metamap :: MetaTraversal f => Traversal (Ann meta1 f) (Ann meta2 f) meta1 meta2
+metamap f (Ann meta a) = Ann <$> f meta <*> metamap' f a
 
 instance IndexKey k a => IndexKey k (Ann' meta a) where
   toIndex (Ann _ a) = toIndex a
@@ -76,44 +83,56 @@ instance IndexKey k a => IndexKey k (Ann' meta a) where
 instance SplitKey k a => SplitKey k (Ann' meta a) where
   type WithoutKey k (Ann' meta a) = Ann' meta (WithoutKey k a)
   splitKey = iso (\(Ann m (view splitKey -> (k, a))) -> (k, Ann m a)) (\(k, Ann m a) -> Ann m $ (k, a) ^. from splitKey)
-  
+
 instance Functor (Ann' meta) where
   fmap f (Ann m a) = Ann m (f a)
+
+data Kind' meta = Star
+                | KFun (Kind meta) (Kind meta)
+                deriving (Show, Eq)
+
+instance MetaTraversal Kind' where
+  metamap' _ Star = pure Star
+  metamap' f (KFun a b) = KFun <$> metamap f a <*> metamap f b
+
+type Kind meta = Ann meta Kind'
+
+data Scheme' var lit meta = Forall [TyVar var] (Type var lit meta)
+
+instance MetaTraversal (Scheme' var lit) where
+  metamap' f (Forall vs t) = Forall vs <$> metamap f t
+
+type Scheme var lit meta = Ann meta (Scheme' var lit)
 
 data Type' var lit meta = TVar (TyVar var)
                         | TLit (TyLit lit)
                         | TFun
                         | TApp (Type var lit meta) (Type var lit meta)
                         deriving (Show, Eq)
-data Kind' meta = Star
-                | KFun (Kind meta) (Kind meta)
-                deriving (Show, Eq)
 
-type Kind meta = Ann meta Kind'
-
-instance MetaFunctor (Type' var lit) where
-  metamap' _ (TVar v) = TVar v
-  metamap' _ (TLit l) = TLit l
-  metamap' _ TFun = TFun
-  metamap' f (TApp a b) = TApp (metamap f a) (metamap f b)
+instance MetaTraversal (Type' var lit) where
+  metamap' _ (TVar v) = pure $ TVar v
+  metamap' _ (TLit l) = pure $ TLit l
+  metamap' _ TFun = pure TFun
+  metamap' f (TApp a b) = TApp <$> metamap f a <*> metamap f b
 
 type Type var lit meta = Ann meta (Type' var lit)
 
 data TyCon' var lit meta = TyCon (ValLit lit) [Type var lit meta]
                          deriving (Show, Eq)
 
-instance MetaFunctor (TyCon' var lit) where
-  metamap' f (TyCon n ts) = TyCon n (map (metamap f) ts)
+instance MetaTraversal (TyCon' var lit) where
+  metamap' f (TyCon n ts) = TyCon n <$> (traverse.metamap) f ts
 
 type TyCon var lit meta = Ann meta (TyCon' var lit)
 
 data TyDecl' var lit meta = TyDecl (TyLit lit) [TyVar var] [TyCon var lit meta]
                               deriving (Show, Eq)
 
-instance MetaFunctor (TyDecl' var lit) where
-  metamap' f (TyDecl n ts cs) = TyDecl n ts (map (metamap f) cs)
+instance MetaTraversal (TyDecl' var lit) where
+  metamap' f (TyDecl n ts cs) = TyDecl n ts <$> (traverse.metamap) f cs
 
-deriving instance (NameKey lit ~ k, SplitKey k lit) => IndexKey (TyLit k) (TyDecl' var lit meta)
+instance (NameKey lit ~ k, SplitKey k lit) => IndexKey (TyLit k) (TyDecl' var lit meta) where
 
 type family NameKey a
 
@@ -121,8 +140,8 @@ type instance NameKey Name = Name
 
 data TyDeclD var lit meta = TyDeclD (WithoutKey (NameKey lit) lit) [TyVar var] [TyCon var lit meta]
 
-instance MetaFunctor (TyDeclD var lit) where
-  metamap' f (TyDeclD k ts cs) = TyDeclD k ts (map (metamap f) cs)
+instance MetaTraversal (TyDeclD var lit) where
+  metamap' f (TyDeclD k ts cs) = TyDeclD k ts <$> (traverse.metamap) f cs
 
 instance (NameKey lit ~ k, SplitKey k lit) => SplitKey (TyLit k) (TyDecl' var lit meta) where
   type WithoutKey (TyLit k) (TyDecl' var lit meta) = TyDeclD var lit meta
@@ -138,9 +157,9 @@ data Pat' var lit meta = PVar (ValVar var)
                        | PCon (ValLit lit) [Pat var lit meta]
                        deriving (Show, Eq)
 
-instance MetaFunctor (Pat' var lit) where
-  metamap' _ (PVar n) = PVar n
-  metamap' f (PCon n ps) = PCon n (map (metamap f) ps)
+instance MetaTraversal (Pat' var lit) where
+  metamap' _ (PVar n) = pure $ PVar n
+  metamap' f (PCon n ps) = PCon n <$> (traverse.metamap) f ps
 
 type Pat var lit meta = Ann meta (Pat' var lit)
 
@@ -155,16 +174,17 @@ data Expr' var lit meta = Var (ValVar var)
                         | Case (Expr var lit meta) (Alts var lit meta)
                         deriving (Show, Eq)
 
-instance MetaFunctor (Expr' var lit) where
-  metamap' _ (Var n) = Var n
-  metamap' _ (Lit n) = Lit n
-  metamap' f (Abs n e) = Abs n (metamap f e)
-  metamap' f (App a b) = App (metamap f a) (metamap f b)
-  metamap' f (Case e alts) = Case (metamap f e) (map (\(p, pe) -> (metamap f p, metamap f pe)) alts)
+instance MetaTraversal (Expr' var lit) where
+  metamap' _ (Var n) = pure $ Var n
+  metamap' _ (Lit n) = pure $ Lit n
+  metamap' f (Abs n e) = Abs n <$> metamap f e
+  metamap' f (App a b) = App <$> metamap f a <*> metamap f b
+  metamap' f (Let n a b) = Let n <$> metamap f a <*> metamap f b
+  metamap' f (Case e alts) = Case <$> metamap f e <*> traverse (\(p, pe) -> (,) <$> metamap f p <*> metamap f pe) alts
 
 type Expr var lit meta = Ann meta (Expr' var lit)
 
-type Types var lit meta = IndexedSet (TyLit lit) (TyDecl var lit meta)
+type Types var lit meta = IndexedSet (TyLit (NameKey lit)) (TyDecl var lit meta)
 
 type NType meta = Type Name Name meta
 type NTyCon meta = TyCon Name Name meta
@@ -178,6 +198,7 @@ data Pos = Pos { line :: !Int
          deriving (Show, Eq)
 
 data Program var lit tvar tlit tmeta emeta =
-  Program { progTypes :: IndexedSet (TyLit (NameKey tlit)) (TyDecl tvar tlit tmeta)
+  Program { progTypes :: Types tvar tlit tmeta
           , progExpr :: Expr var lit emeta
           }
+  deriving (Show)

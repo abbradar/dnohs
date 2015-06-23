@@ -42,9 +42,6 @@ executable dnohs
                      , FlexibleContexts
                      , FlexibleInstances
                      , TemplateHaskell
-                     , StandaloneDeriving
-                     , DeriveAnyClass
-                     , DeriveGeneric
                      , LambdaCase
   build-tools:         alex
                      , happy

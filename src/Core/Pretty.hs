@@ -1,6 +1,6 @@
 module Core.Pretty where
 
-import Prelude hiding ((<$>))
+import Prelude hiding ((<$>), exp)
 import Data.Text (Text)
 import qualified Data.Text.Lazy as TL
 import Text.PrettyPrint.Leijen.Text
@@ -30,16 +30,17 @@ instance (Pretty var, Pretty lit, Pretty meta) => Pretty (Expr' var lit meta) wh
   pretty (Lit lit) = pretty lit
   pretty (Abs var exp) = parens $ "λ" <> pretty var <> "." </> pretty exp
   pretty (App a b) = pretty a <+> pretty b
+  pretty (Let name e a) = "let" <+> pretty name <+> "=" <+> pretty e <+> "in" <+> pretty a
   pretty (Case exp alts) = "case" <+> pretty exp <+> "of" <$> indent 2 (vsep $ map palt alts)
-    where palt (pat, exp) = pretty pat <+> "->" <+> pretty exp
+    where palt (pat, exp') = pretty pat <+> "->" <+> pretty exp'
 
 instance (Pretty var, Pretty lit, Pretty meta) => Pretty (Pat' var lit meta) where
   pretty (PVar var) = pretty var
   pretty (PCon n ps) = parens $ pretty n <+> hsep (map pretty ps)
 
 instance (Pretty var, Pretty lit, Pretty meta) => Pretty (TyDecl' var lit meta) where
-  pretty (TyDecl lit vars (c:cons)) = "data" <+> pretty lit
-                                      <+> hsep (map pretty vars)
+  pretty (TyDecl lit vars []) = "data" <+> pretty lit <+> hsep (map pretty vars)
+  pretty (TyDecl lit vars (c:cons)) = pretty (TyDecl lit vars [] :: TyDecl' var lit meta)
                                       <+> align (vsep $ ("=" <+> pretty c) : map (("|" <+>) . pretty) cons)
 
 instance (Pretty var, Pretty lit, Pretty meta) => Pretty (TyCon' var lit meta) where
@@ -66,5 +67,11 @@ instance Pretty meta => Pretty (Kind' meta) where
   pretty Star = "*"
   pretty (KFun a b) = "(" <> pretty a <> ")" <+> "->" <+> "(" <> pretty b <> ")"
 
+instance (Pretty var, Pretty lit, Pretty meta) => Pretty (Scheme' var lit meta) where
+  pretty (Forall vars e) = "∀" <+> hsep (map pretty vars) <+> "." <+> pretty e
+
 instance Pretty name => Pretty (KAnn name) where
   pretty (KName name kind) = "(" <> pretty name <+> " :: " <+> pretty kind <> ")"
+
+instance Pretty name => Pretty (TAnn name) where
+  pretty (TName name kind) = "(" <> pretty name <+> " :: " <+> pretty kind <> ")"

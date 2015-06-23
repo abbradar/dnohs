@@ -40,7 +40,7 @@ desugarExpr (Ann pos (HCase expr alts)) =
 desugarExpr (Ann pos (HVar v)) = return $ Ann (pos, Nothing) $ Var $ fmap NQName v
 desugarExpr (Ann pos (HLit v)) = return $ Ann (pos, Nothing) $ Lit v
 desugarExpr (Ann pos (HApp exp1 exp2)) = Ann (pos, Nothing) <$> (App <$> desugarExpr exp1 <*> desugarExpr exp2)
-desugarExpr (Ann pos (HTyAnn typ expr)) = Ann (pos, Just typ) <$> _annval <$> desugarExpr expr
+desugarExpr (Ann pos (HTyAnn typ expr)) = Ann (pos, Just typ) <$> view annval <$> desugarExpr expr
 
 desugarLet :: [HsLet Pos] -> Desugar (NQExpr -> NQExpr)
 desugarLet defs = do
@@ -48,6 +48,7 @@ desugarLet defs = do
 
   let addVal :: Set (ValVar Name) -> [HsLet Pos] -> Desugar (NQExpr -> NQExpr)
       addVal _ [] = return id
+      addVal _ ((Ann _ (LAnn _ _)):_) = error "impossible!"
       addVal exs ds@((Ann pos (LBind name (length -> nbinds) exp1)):_) = do
         when (name `S.member` exs) $ throwCError pos "Duplicate let binding"
         let ann = M.lookup name anns
@@ -55,7 +56,7 @@ desugarLet defs = do
         forM_ cur $ \(Ann pos' (LBind _ binds _)) ->
           unless (length binds == nbinds) $ throwCError pos' "Number of arguments differ"
        
-        Ann (epos, eann) expr <- case nbinds of
+        expr <- case nbinds of
          0 -> do
            unless (length cur == 1) $ throwCError pos "Conflicting definitions"
            desugarExpr exp1
@@ -71,7 +72,7 @@ desugarLet defs = do
              return (intAnn pos $ PCon tname binds, expr)
            return $ iargs $ intAnn pos $ Case scrut cases
 
-        let fun x = Ann (pos, ann) $ App (intAnn epos $ Abs (fmap NQName name) x) $ Ann (epos, eann) expr
+        let fun x = Ann (pos, ann) $ Let (fmap NQName name) expr x
         restfun <- addVal (S.insert name exs) next
         return $ restfun . fun
 

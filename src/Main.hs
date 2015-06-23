@@ -1,14 +1,12 @@
 import qualified Data.ByteString.Lazy.Char8 as BL
 
-import Text.PrettyPrint.Leijen.Text (Doc, putDoc, pretty, vsep)
+import Text.PrettyPrint.Leijen.Text (Doc, putDoc, pretty)
 import Haskell.Parser
 import Haskell.Desugar
 import Haskell.Pretty
-import Core.Types
 import Core.Monad
 import Core.Rename
 import Core.Typecheck
-import qualified Data.IndexedSet as I
 
 printDoc :: Doc -> IO ()
 printDoc a = do
@@ -22,8 +20,13 @@ main = do
    printDoc $ prettyHsTop expr
    nq <- either (fail . show) return $ runCompiler $ desugar expr
    printDoc $ pretty nq
-   q <- either (fail . show) return $ runCompiler $ rename nq
+   (q, r) <- either (fail . show) return $ runCompiler $ do
+     q <- rename nq
+     r <- typecheck q
+     return (q, r)
    printDoc $ pretty q
-   r <- either (fail . show) return $ runCompiler $ typecheck q
-   printDoc $ vsep $ map pretty $ I.toList $ progTypes r
+   printDoc $ pretty r
+
+   print r
+   
    return ()

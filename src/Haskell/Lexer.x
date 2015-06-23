@@ -177,6 +177,10 @@ tok f (convertPos -> pos@(Pos _ c), _, str, _) len = prevLayout
               | c == c' -> do
                 awaitingToken .= Just currLayout
                 return $ Posed Nothing TSemicolon
+            (Braced:_)
+              | tok' == TCBrace -> do
+                  layoutStack %= tail
+                  currLayout
             _ -> currLayout
 
         currLayout = do
@@ -191,9 +195,11 @@ tok f (convertPos -> pos@(Pos _ c), _, str, _) len = prevLayout
                        awaitingToken .= Just next
                        return $ Posed Nothing TCBrace
                  awaitingToken .= Just next1
-               else do
-                 layoutStack %= (Lined c end :)
-                 awaitingToken .= Just next
+               else if tok' == TOBrace
+                    then layoutStack %= (Braced:)
+                    else do
+                      layoutStack %= (Lined c end :)
+                      awaitingToken .= Just next
              return $ Posed Nothing TOBrace
            Nothing -> return tok
 
