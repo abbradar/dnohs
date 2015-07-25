@@ -20,6 +20,7 @@ import Prelude hiding (null, lookup)
 import Data.Map (Map)
 import qualified Data.Map as M
 import Data.Default.Generics
+import Data.Aeson (ToJSON(..))
 import Control.Lens
 
 class IndexKey k a where
@@ -101,3 +102,6 @@ toList (ISet m) = M.elems m
 
 fromList :: (Ord k, IndexKey k a) => [a] -> IndexedSet k a
 fromList = ISet . M.fromList . map (\x -> (toIndex x, x))
+
+instance ToJSON a => ToJSON (IndexedSet k a) where
+  toJSON = toJSON . toList

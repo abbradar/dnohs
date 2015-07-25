@@ -2,9 +2,11 @@
 module Core.Types where
 
 import Data.Text (Text)
+import Data.Aeson (ToJSON, FromJSON)
 import qualified Data.Text as T
 import Data.Monoid
 import Control.Lens
+import GHC.Generics (Generic)
 import Text.PrettyPrint.Leijen.Text (Pretty)
 
 import Data.IndexedSet (IndexedSet, IndexKey(..), SplitKey(..))
@@ -23,43 +25,34 @@ instance TempVar Text where
   tempNum n = "a_" <> T.pack (show n)
 
 newtype TyVar n = TyVar n
-                deriving (Show, Eq, Ord, TempVar, Pretty)
+                deriving (Show, Eq, Ord, TempVar, Pretty, Generic, ToJSON)
 
 instance Functor TyVar where
   fmap f (TyVar n) = TyVar (f n)
 
 newtype TyLit n = TyLit n
-                deriving (Show, Eq, Ord, TempVar, Pretty)
+                deriving (Show, Eq, Ord, TempVar, Pretty, Generic, ToJSON)
 
 instance Functor TyLit where
   fmap f (TyLit n) = TyLit (f n)
 
 newtype ValLit n = ValLit n
-                 deriving (Show, Eq, Ord, TempVar, Pretty)
+                 deriving (Show, Eq, Ord, TempVar, Pretty, Generic, ToJSON)
 
 instance Functor ValLit where
   fmap f (ValLit n) = ValLit (f n)
 
 newtype ValVar n = ValVar n
-                 deriving (Show, Eq, Ord, TempVar, Pretty)
+                 deriving (Show, Eq, Ord, TempVar, Pretty, Generic, ToJSON)
 
 instance Functor ValVar where
   fmap f (ValVar n) = ValVar (f n)
 
--- | Bound variable with name and unique number to identify.
--- | The number is guaranteed to be unique for the whole tree.
--- | TODO: we can achieve faster Eq by only comparing Integers.
-data Bound = Bound Name Integer
-           deriving (Show, Eq)
-
--- | Bound variable or a free value of type 'var'
-data Var var = VBound Bound
-             | VFree var
-             deriving (Show, Eq)
-
 -- | Annotated data type.
 data Ann' meta a = Ann meta a
-                 deriving (Show, Eq)
+                 deriving (Show, Eq, Generic)
+
+instance (ToJSON meta, ToJSON a) => ToJSON (Ann' meta a)
 
 type Ann meta tree = Ann' meta (tree meta)
 
@@ -89,7 +82,9 @@ instance Functor (Ann' meta) where
 
 data Kind' meta = Star
                 | KFun (Kind meta) (Kind meta)
-                deriving (Show, Eq)
+                deriving (Show, Eq, Generic)
+
+instance ToJSON meta => ToJSON (Kind' meta)
 
 instance MetaTraversal Kind' where
   metamap' _ Star = pure Star
@@ -108,7 +103,9 @@ data Type' var lit meta = TVar (TyVar var)
                         | TLit (TyLit lit)
                         | TFun
                         | TApp (Type var lit meta) (Type var lit meta)
-                        deriving (Show, Eq)
+                        deriving (Show, Eq, Generic)
+
+instance (ToJSON var, ToJSON lit, ToJSON meta) => ToJSON (Type' var lit meta)
 
 instance MetaTraversal (Type' var lit) where
   metamap' _ (TVar v) = pure $ TVar v
@@ -119,7 +116,9 @@ instance MetaTraversal (Type' var lit) where
 type Type var lit meta = Ann meta (Type' var lit)
 
 data TyCon' var lit meta = TyCon (ValLit lit) [Type var lit meta]
-                         deriving (Show, Eq)
+                         deriving (Show, Eq, Generic)
+
+instance (ToJSON var, ToJSON lit, ToJSON meta) => ToJSON (TyCon' var lit meta)
 
 instance MetaTraversal (TyCon' var lit) where
   metamap' f (TyCon n ts) = TyCon n <$> (traverse.metamap) f ts
@@ -127,7 +126,9 @@ instance MetaTraversal (TyCon' var lit) where
 type TyCon var lit meta = Ann meta (TyCon' var lit)
 
 data TyDecl' var lit meta = TyDecl (TyLit lit) [TyVar var] [TyCon var lit meta]
-                              deriving (Show, Eq)
+                              deriving (Show, Eq, Generic)
+
+instance (ToJSON var, ToJSON lit, ToJSON meta) => ToJSON (TyDecl' var lit meta)
 
 instance MetaTraversal (TyDecl' var lit) where
   metamap' f (TyDecl n ts cs) = TyDecl n ts <$> (traverse.metamap) f cs
@@ -155,7 +156,9 @@ type TyDecl var lit meta = Ann meta (TyDecl' var lit)
 
 data Pat' var lit meta = PVar (ValVar var)
                        | PCon (ValLit lit) [Pat var lit meta]
-                       deriving (Show, Eq)
+                       deriving (Show, Eq, Generic)
+
+instance (ToJSON var, ToJSON lit, ToJSON meta) => ToJSON (Pat' var lit meta)
 
 instance MetaTraversal (Pat' var lit) where
   metamap' _ (PVar n) = pure $ PVar n
@@ -172,7 +175,9 @@ data Expr' var lit meta = Var (ValVar var)
                         | App (Expr var lit meta) (Expr var lit meta)
                         | Let (ValVar var) (Expr var lit meta) (Expr var lit meta)
                         | Case (Expr var lit meta) (Alts var lit meta)
-                        deriving (Show, Eq)
+                        deriving (Show, Eq, Generic)
+
+instance (ToJSON var, ToJSON lit, ToJSON meta) => ToJSON (Expr' var lit meta)
 
 instance MetaTraversal (Expr' var lit) where
   metamap' _ (Var n) = pure $ Var n
@@ -201,4 +206,7 @@ data Program var lit tvar tlit tmeta emeta =
   Program { progTypes :: Types tvar tlit tmeta
           , progExpr :: Expr var lit emeta
           }
-  deriving (Show)
+  deriving (Show, Generic)
+
+instance (ToJSON var, ToJSON lit, ToJSON tvar, ToJSON tlit, ToJSON emeta, ToJSON tmeta)
+         => ToJSON (Program var lit tvar tlit tmeta emeta)

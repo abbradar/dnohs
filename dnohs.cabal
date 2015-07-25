@@ -26,6 +26,8 @@ executable dnohs
                      , text
                      , containers
                      , transformers
+                     , aeson
+                     , aeson-pretty
                      , mtl
                      , lens
                      , data-default-generics
@@ -42,6 +44,7 @@ executable dnohs
                      , FlexibleContexts
                      , FlexibleInstances
                      , TemplateHaskell
+                     , DeriveGeneric
                      , LambdaCase
   build-tools:         alex
                      , happy

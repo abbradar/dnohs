@@ -6,7 +6,7 @@ let
 
   f = { mkDerivation, alex, array, base, bytestring, containers
       , happy, lens, mtl, stdenv, text, transformers, data-default-generics
-      , wl-pprint-text
+      , wl-pprint-text, aeson, aeson-pretty
       }:
       mkDerivation {
         pname = "dnohs";
@@ -16,7 +16,7 @@ let
         isExecutable = true;
         buildDepends = [
           array base bytestring containers lens mtl text transformers
-          data-default-generics wl-pprint-text
+          data-default-generics wl-pprint-text aeson aeson-pretty
         ];
         buildTools = [ alex happy ];
         license = stdenv.lib.licenses.bsd3;

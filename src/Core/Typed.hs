@@ -3,9 +3,13 @@ module Core.Typed where
 import Data.IndexedSet (IndexKey(..), SplitKey(..))
 import Core.Types
 import Control.Lens
+import Data.Aeson (ToJSON(..))
+import GHC.Generics (Generic)
 
 data QName = QName Name Int
-           deriving (Show, Eq, Ord)
+           deriving (Show, Eq, Ord, Generic)
+
+instance ToJSON QName
 
 type instance NameKey QName = QName
 
@@ -18,7 +22,9 @@ instance TempVar QName where
   tempNum = QName "var"
 
 data KAnn name = KName name (Kind ())
-           deriving (Show, Eq)
+           deriving (Show, Eq, Generic)
+
+instance ToJSON name => ToJSON (KAnn name)
 
 type instance NameKey (KAnn name) = name
 
@@ -32,7 +38,9 @@ type KName = KAnn Name
 type KQName = KAnn QName
 
 data TAnn name = TName name (Type QName Name ())
-               deriving (Show, Eq)
+               deriving (Show, Eq, Generic)
+
+instance ToJSON name => ToJSON (TAnn name)
 
 type TName = TAnn Name
 type TQName = TAnn QName

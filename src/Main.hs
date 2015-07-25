@@ -1,5 +1,3 @@
-import qualified Data.ByteString.Lazy.Char8 as BL
-
 import Text.PrettyPrint.Leijen.Text (Doc, putDoc, pretty)
 import Haskell.Parser
 import Haskell.Desugar
@@ -7,6 +5,8 @@ import Haskell.Pretty
 import Core.Monad
 import Core.Rename
 import Core.Typecheck
+import qualified Data.Aeson.Encode.Pretty as JSON
+import qualified Data.ByteString.Lazy.Char8 as BL
 
 printDoc :: Doc -> IO ()
 printDoc a = do
@@ -26,7 +26,6 @@ main = do
      return (q, r)
    printDoc $ pretty q
    printDoc $ pretty r
-
-   print r
+   BL.putStrLn $ JSON.encodePretty r
    
    return ()
