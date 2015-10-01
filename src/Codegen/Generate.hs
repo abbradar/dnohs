@@ -58,7 +58,6 @@ cname :: Text -> Name
 cname = Name . cname'
 
 allocName :: Name
--- allocName = Name "GC_malloc"
 allocName = Name "malloc"
 
 allocType :: Type
@@ -283,7 +282,7 @@ builtinDefinitions = do
                                 , basicBlocks = blocks
                                 }
     tellDef cdef
-  
+
   -- `force` -- force a thunk
   runUniqueT $ do
     blockId <- genTemp
@@ -318,6 +317,40 @@ builtinDefinitions = do
                                         , basicBlocks = [retBlock blockId cmds]
                                         }
     tellDef undefinedDef
+
+  -- `seq` -- force computations
+  runUniqueT $ do
+    let x = "a"
+        y = "b"
+    blocks <- genAbs' x "seq" S.empty $ genAbs'' y $ \_ _ -> do
+      let getInt :: Name -> Name -> DefGenerator (Name, Name, [BasicBlock])
+          getInt startId n = do
+            (loadId, fblocks) <- force startId n
+            (nR, loadCmds) <- runWriterT $ do
+              nV <- getThunkVal int n
+              nR <- genTemp
+              tell [ nR := load' (local (ptr int) nV) ]
+              return nR
+            nextId <- genTemp
+            let loadBlock = brBlock loadId loadCmds nextId
+            return (nR, nextId, fblocks ++ [loadBlock])
+
+      startId <- genTemp
+      (forceId, f1blocks) <- force startId (Name x)
+      (finId, f2blocks) <- force forceId (Name y)
+      tmp <- genTemp
+      let finCmds = [ tmp := load' (local (ptr thunk) (Name y))
+                    , Do $ store' (local (ptr thunk) thunkArg) (local thunk tmp)
+                    ]
+          finBlock = retBlock finId finCmds
+
+      return $ f1blocks ++ f2blocks ++ [finBlock]
+    let seqDef = functionDefaults { returnType = VoidType
+                                  , name = Name "seq"
+                                  , parameters = ([thunkPar thunkArg], False)
+                                  , basicBlocks = blocks
+                                  }
+    tellDef seqDef
 
   -- `add` -- add two ints
   runUniqueT $ do

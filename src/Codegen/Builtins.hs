@@ -37,6 +37,7 @@ builtins :: Map Name (Type Name Name ())
 builtins =
   M.fromList
   [ ("undefined", var () "a")
+  , ("seq", fun () (var () "a") (fun () (var () "b") (var () "b")))
   , ("add", fun () tint (fun () tint tint))
   --, (intEq, fun () tint (fun () tint tbool))
   ]
