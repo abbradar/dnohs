@@ -1,25 +1,20 @@
-{ mkDerivation, array, base, containers, directory, fetchgit, fetchpatch, happy
-, perl, process, QuickCheck, alex, stdenv
+{ mkDerivation, array, base, containers, directory, fetchgit
+, process, QuickCheck, stdenv
 }:
-
 mkDerivation {
   pname = "alex";
   version = "3.1.4";
   src = fetchgit {
-    url = "https://github.com/simonmar/alex";
-    sha256 = "b55646863e4bafe1b04b756821ca5da6e88d398bd2801194d2c71c3a8b921800";
-    rev = "335ac13c0c2d4ace03cee84a77262236e6db2108";
+    url = "git://github.com/simonmar/alex";
+    sha256 = "26e8de081aa35482a62043549888d6082ca7c1cfd196a081bf7880809d08614e";
+    rev = "447bbb8f53db0201e7ba7fe525f2a3b37c2a5f94";
   };
-  patches = [ (fetchpatch {
-                url = "https://github.com/simonmar/alex/pull/65.patch";
-                sha256 = "17aiq39riikd0wrl8zv01wmvnxhzbibh01y8q3540w0an8kw8cwk";
-              })
-            ];
   isLibrary = false;
   isExecutable = true;
-  buildDepends = [ array base containers directory QuickCheck ];
-  testDepends = [ base process ];
-  buildTools = [ happy perl alex ];
+  executableHaskellDepends = [
+    array base containers directory QuickCheck
+  ];
+  testHaskellDepends = [ base process ];
   homepage = "http://www.haskell.org/alex/";
   description = "Alex is a tool for generating lexical analysers in Haskell";
   license = stdenv.lib.licenses.bsd3;

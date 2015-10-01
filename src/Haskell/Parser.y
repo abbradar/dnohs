@@ -67,10 +67,10 @@ Top : Let                          { TELet $1 }
     | TyDecl                       { TEData $1 }
 
 TyDecl :: { HsTyDecl Pos }
-TyDecl : data con TyVars '=' TyCons { annPos $1 $ TyDecl (extract $2) $3 $5 } 
+TyDecl : data con TyVars '=' TyCons { annPos $1 $ TyDecl (extractText $2) $3 $5 } 
 
-TyVars :: { [TyVar Name] }
-TyVars : val TyVars                { extract $1 : $2 }
+TyVars :: { [Name] }
+TyVars : val TyVars                { extractText $1 : $2 }
        | {- empty -}               { [] }
 
 TyCons :: { [HsTyCon Pos] }
@@ -78,7 +78,7 @@ TyCons : TyCon '|' TyCons          { $1 : $3 }
        | TyCon                     { [$1] }
 
 TyCon :: { HsTyCon Pos }
-TyCon : con TopTypes               { annPos $1 $ TyCon (extract $1) $2 }
+TyCon : con TopTypes               { annPos $1 $ TyCon (extractText $1) $2 }
 
 TopTypes :: { [HsType Pos] }
 TopTypes : TypeTerm TopTypes       { $1 : $2 }
@@ -89,8 +89,8 @@ Type : Type '->' Type              { replace $1 $ TApp (replace $1 $ TApp (annPo
      | TypeApp                     { $1 }
 
 TypeTerm :: { HsType Pos }
-TypeTerm : val                     { annPos $1 $ TVar $ extract $1 }
-         | con                     { annPos $1 $ TLit $ extract $1 }
+TypeTerm : val                     { annPos $1 $ TVar $ extractText $1 }
+         | con                     { annPos $1 $ TLit $ extractText $1 }
          | '(' Type ')'            { $2 }
 
 TypeApp :: { HsType Pos }
@@ -98,8 +98,8 @@ TypeApp : TypeApp TypeTerm         { replace $1 $ TApp $1 $2 }
         | TypeTerm                 { $1 }
 
 Let :: { HsLet Pos }
-Let : val '::' Type                 { annPos $1 $ LAnn (extract $1) $3 }
-    | val TopPats '=' Expr         { annPos $1 $ LBind (extract $1) $2 $4 }
+Let : val '::' Type                 { annPos $1 $ LAnn (extractText $1) $3 }
+    | val TopPats '=' Expr         { annPos $1 $ LBind (extractText $1) $2 $4 }
 
 TopPats :: { [HsPat Pos] }
 TopPats : TopPat TopPats           { $1 : $2 }
@@ -107,19 +107,20 @@ TopPats : TopPat TopPats           { $1 : $2 }
 
 TopPat :: { HsPat Pos }
 TopPat : OnePat                    { $1 }
-       | con                       { annPos $1 $ HPCon (extract $1) [] }
+       | con                       { annPos $1 $ HPCon (extractText $1) [] }
 
 Pat :: { HsPat Pos }
 Pat : OnePat                       { $1 }
-    | con TopPats                  { annPos $1 $ HPCon (extract $1) $2 }
+    | con TopPats                  { annPos $1 $ HPCon (extractText $1) $2 }
 
 OnePat :: { HsPat Pos }
-OnePat : val                       { annPos $1 $ HPVar (extract $1) }
+OnePat : val                       { annPos $1 $ HPVar $ extractText $1 }
+--       | int                       { annPos $1 $ HPInt $ extractInt $1 }
        | '_'                       { annPos $1 HPWildCard }
        | '(' Pat ')'               { $2 }
 
 Expr :: { HsExpr Pos }
-  : Expr '::' Type                       { replace $1 $ HTyAnn $3 $1 }
+  : Expr '::' Type                      { replace $1 $ HTyAnn $3 $1 }
   | BeginLet let '{' Lets '}' in Expr   { annPos $2 $ HLet $4 $7 }
   | case Expr BeginCase of '{' Alts '}' { annPos $1 $ HCase $2 $6 }
   | ExprApp                             { $1 }
@@ -143,8 +144,9 @@ ExprApp :: { HsExpr Pos }
   | ExprTerm                       { $1 }
 
 ExprTerm :: { HsExpr Pos }
-ExprTerm : val                     { annPos $1 $ HVar $ extract $1 }
-         | con                     { annPos $1 $ HLit $ extract $1 }
+ExprTerm : val                     { annPos $1 $ HVar $ extractText $1 }
+         | int                     { annPos $1 $ HInt $ extractInt $1 }
+         | con                     { annPos $1 $ HLit $ extractText $1 }
          | '(' Expr ')'            { $2 }
 
 String :: { Text }
@@ -157,24 +159,12 @@ StringP
 
 {
 
-extract :: FromToken t => Token -> t
-extract (Posed _ p) = extract' p
+extractText :: Token -> Text
+extractText (Posed _ (TVal v)) = v
+extractText (Posed _ (TCon t)) = t
 
--- helpful class to reduce verbosity in the parser
-class FromToken t where
-  extract' :: Token' -> t
-
-instance FromToken (TyVar Name) where
-  extract' (TVal t) = TyVar t
-
-instance FromToken (TyLit Name) where
-  extract' (TCon t) = TyLit t
-
-instance FromToken (ValLit Name) where
-  extract' (TCon t) = ValLit t
-
-instance FromToken (ValVar Name) where
-  extract' (TVal t) = ValVar t
+extractInt :: Token -> Integer
+extractInt (Posed _ (TInt i)) = i
 
 annPos :: Token -> a -> Ann' Pos a
 annPos t = Ann $ tpos t

@@ -26,12 +26,12 @@ executable dnohs
                      , text
                      , containers
                      , transformers
-                     , aeson
-                     , aeson-pretty
                      , mtl
                      , lens
                      , data-default-generics
                      , wl-pprint-text
+                     , llvm-general
+                     , llvm-general-pure
   default-extensions:  RankNTypes
                      , OverloadedStrings
                      , ViewPatterns
@@ -40,9 +40,12 @@ executable dnohs
                      , DefaultSignatures
                      , TypeFamilies
                      , GeneralizedNewtypeDeriving
+                     , NoMonomorphismRestriction
                      , ScopedTypeVariables
                      , FlexibleContexts
                      , FlexibleInstances
+                     , UndecidableInstances
+                     , LiberalTypeSynonyms
                      , TemplateHaskell
                      , DeriveGeneric
                      , LambdaCase

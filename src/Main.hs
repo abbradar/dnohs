@@ -1,17 +1,18 @@
-import Text.PrettyPrint.Leijen.Text (Doc, putDoc, pretty)
+import Control.Monad.Except
+import qualified Data.ByteString.Lazy.Char8 as BL
+import LLVM.General.Context
+import LLVM.General.Module
+import LLVM.General.PrettyPrint
+
 import Haskell.Parser
 import Haskell.Desugar
-import Haskell.Pretty
+import Haskell.Types
 import Core.Monad
 import Core.Rename
 import Core.Typecheck
-import qualified Data.Aeson.Encode.Pretty as JSON
-import qualified Data.ByteString.Lazy.Char8 as BL
-
-printDoc :: Doc -> IO ()
-printDoc a = do
-  putDoc a
-  putStrLn "\n"
+import Core.Pretty
+import Codegen.Generate
+import Codegen.Run
 
 main :: IO ()
 main = do
@@ -19,13 +20,20 @@ main = do
    expr <- either fail return $ parseHaskell input
    printDoc $ prettyHsTop expr
    nq <- either (fail . show) return $ runCompiler $ desugar expr
-   printDoc $ pretty nq
+   printPretty nq
    (q, r) <- either (fail . show) return $ runCompiler $ do
      q <- rename nq
      r <- typecheck q
      return (q, r)
-   printDoc $ pretty q
-   printDoc $ pretty r
-   BL.putStrLn $ JSON.encodePretty r
-   
-   return ()
+   printPretty q
+   printPretty r
+   let mdl' = generateLLVM r
+   --putStrLn $ showPretty mdl'
+   e <- withContext $ \ctx -> runExceptT $ withModuleFromAST ctx mdl' $ \mdl -> do
+     asm <- moduleLLVMAssembly mdl
+     putStrLn asm
+   case e of
+    Left err -> putStrLn $ "LLVM error: " ++ err
+    Right _ -> return ()
+   r <- runJIT mdl'
+   putStrLn $ "Result: " ++ show r

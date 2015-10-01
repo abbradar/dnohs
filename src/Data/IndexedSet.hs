@@ -11,17 +11,22 @@ module Data.IndexedSet
        , lookup
        , insert
        , delete
+       , union
        , itraverseSet
+       , map
+       , imap
        , toList
        , fromList
+       , keysSet
        ) where
 
-import Prelude hiding (null, lookup)
+import Prelude hiding (null, lookup, map)
 import Data.Map (Map)
 import qualified Data.Map as M
+import Data.Set (Set)
+-- import qualified Data.Set as S
 import Data.Default.Generics
-import Data.Aeson (ToJSON(..))
-import Control.Lens
+import Control.Lens hiding (imap)
 
 class IndexKey k a where
   toIndex :: a -> k
@@ -87,6 +92,9 @@ insert a (ISet m) = ISet $ M.insert (toIndex a) a m
 delete :: (Ord k, IndexKey k a) => a -> IndexedSet k a -> IndexedSet k a
 delete a (ISet m) = ISet $ M.delete (toIndex a) m
 
+union :: Ord k => IndexedSet k a -> IndexedSet k a -> IndexedSet k a
+union (ISet a) (ISet b) = ISet (a `M.union` b)
+
 itraverseSet :: forall k a b. (SplitKey k a, SplitKey k b) => IndexedTraversal k (IndexedSet k a) (IndexedSet k b) (WithoutKey k a) (WithoutKey k b)
 itraverseSet = _indexedSet .> itraversed <. (splitKey' . ___2)
   where -- I said "bite", haven't I?
@@ -97,11 +105,17 @@ itraverseSet = _indexedSet .> itraversed <. (splitKey' . ___2)
         ___2 :: Lens (k, WithoutKey k a) (k, WithoutKey k b) (WithoutKey k a) (WithoutKey k b)
         ___2 = __2
 
+map :: (SplitKey k a, SplitKey k b) => (WithoutKey k a -> WithoutKey k b) -> IndexedSet k a -> IndexedSet k b
+map = over itraverseSet
+
+imap :: (SplitKey k a, SplitKey k b) => (k -> WithoutKey k a -> WithoutKey k b) -> IndexedSet k a -> IndexedSet k b
+imap = iover itraverseSet
+
 toList :: IndexedSet k a -> [a]
 toList (ISet m) = M.elems m
 
 fromList :: (Ord k, IndexKey k a) => [a] -> IndexedSet k a
-fromList = ISet . M.fromList . map (\x -> (toIndex x, x))
+fromList = ISet . M.fromList . fmap (\x -> (toIndex x, x))
 
-instance ToJSON a => ToJSON (IndexedSet k a) where
-  toJSON = toJSON . toList
+keysSet :: IndexedSet k a -> Set k
+keysSet (ISet m) = M.keysSet m

@@ -1,4 +1,5 @@
 {
+
 module Haskell.Lexer
        ( Token'(..)
        , Token(..)
@@ -127,6 +128,7 @@ data Token = Posed !(Maybe Pos) !Token'
 
 tval :: Token -> Token'
 tval (Posed _ val) = val
+tval EOF = error "tval: invalid token"
 
 alexEOF :: Alex Token
 alexEOF = do
@@ -217,6 +219,7 @@ closeComment _ _ = do
 
 tpos :: Token -> Pos
 tpos (Posed (Just p) _) = p
+tpos _ = error "tpos: invalid token"
 
 val :: Token' -> AlexAction Token
 val = tok . const

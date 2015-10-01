@@ -1,0 +1,2 @@
+mytest a b = a
+main = mytest 4 5

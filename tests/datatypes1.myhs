@@ -1,0 +1,6 @@
+data Nat = Z | S Nat           
+
+natToInt :: Nat -> Int
+natToInt Z = 0
+
+main = natToInt (S Z)

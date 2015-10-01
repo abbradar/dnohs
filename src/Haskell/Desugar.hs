@@ -4,12 +4,14 @@ module Haskell.Desugar
 
 import Control.Monad
 import Data.Monoid
-import Data.IndexedSet (IndexKey(..), SplitKey(..))
-import qualified Data.IndexedSet as I
+import Data.Maybe
+import Data.Map (Map)
 import qualified Data.Map as M
 import Data.Set (Set)
 import qualified Data.Set as S
 import qualified Data.Text as T
+import Data.IndexedSet (SplitKey(..))
+import qualified Data.IndexedSet as I
 import Control.Lens
 import Control.Monad.State
 
@@ -17,6 +19,7 @@ import Haskell.Types
 import Core.Types
 import Core.Rename
 import Core.Monad
+import Codegen.Builtins
 
 type Desugar a = StateT (Set Int) Compiler a
 
@@ -24,59 +27,56 @@ requireTuple :: Int -> Desugar ()
 requireTuple = modify . S.insert
 
 intAnn :: Pos -> a -> Ann' NQMeta a
-intAnn pos = Ann (pos, Nothing)
+intAnn pos = Ann (pos, [])
+
+ipos :: Pos
+ipos = Pos 0 0
 
 desugarPat :: HsPat Pos -> Desugar NQPat
 desugarPat (Ann p e) = intAnn p <$> case e of
-  HPVar var -> return $ PVar $ fmap NQName var
+  HPVar v -> return $ PVar $ NQName v
   HPWildCard -> PVar <$> genTemp
-  HPCon lit ps -> PCon lit <$> mapM desugarPat ps
+  HPCon l ps -> PCon l <$> mapM desugarPat ps
 
 desugarExpr :: HsExpr Pos -> Desugar NQExpr
-desugarExpr (Ann _ (HLet lets expr)) = desugarLet lets <*> desugarExpr expr
+desugarExpr (Ann pos (HLet lets expr)) = desugarLet pos lets <*> desugarExpr expr
 desugarExpr (Ann pos (HCase expr alts)) =
-  Ann (pos, Nothing) <$> (Case <$> desugarExpr expr <*> mapM pts alts)
+  intAnn pos <$> (Case <$> desugarExpr expr <*> mapM pts alts)
   where pts (p, e) = (,) <$> desugarPat p <*> desugarExpr e
-desugarExpr (Ann pos (HVar v)) = return $ Ann (pos, Nothing) $ Var $ fmap NQName v
-desugarExpr (Ann pos (HLit v)) = return $ Ann (pos, Nothing) $ Lit v
-desugarExpr (Ann pos (HApp exp1 exp2)) = Ann (pos, Nothing) <$> (App <$> desugarExpr exp1 <*> desugarExpr exp2)
-desugarExpr (Ann pos (HTyAnn typ expr)) = Ann (pos, Just typ) <$> view annval <$> desugarExpr expr
+desugarExpr (Ann pos (HVar v)) = return $ intAnn pos $ Var $ NQName v
+desugarExpr (Ann pos (HLit l)) = return $ intAnn pos $ Lit l
+desugarExpr (Ann pos (HInt i)) = return $ Ann (pos, [Ann pos $ TLit intType]) $ Int i
+desugarExpr (Ann pos (HApp exp1 exp2)) = intAnn pos <$> (App <$> desugarExpr exp1 <*> desugarExpr exp2)
+desugarExpr (Ann _ (HTyAnn typ expr)) = do
+  Ann (pos, anns) val <- desugarExpr expr
+  return $ Ann (pos, typ : anns) val
 
-desugarLet :: [HsLet Pos] -> Desugar (NQExpr -> NQExpr)
-desugarLet defs = do
+desugarLet :: Pos -> [HsLet Pos] -> Desugar (NQExpr -> NQExpr)
+desugarLet tpos defs = do
   anns <- indexVals $ defs ^..traverse.annval._LAnn
 
-  let addVal :: Set (ValVar Name) -> [HsLet Pos] -> Desugar (NQExpr -> NQExpr)
-      addVal _ [] = return id
-      addVal _ ((Ann _ (LAnn _ _)):_) = error "impossible!"
-      addVal exs ds@((Ann pos (LBind name (length -> nbinds) exp1)):_) = do
-        when (name `S.member` exs) $ throwCError pos "Duplicate let binding"
-        let ann = M.lookup name anns
-            (cur, next) = span ((== name) . toIndex) ds
-        forM_ cur $ \(Ann pos' (LBind _ binds _)) ->
-          unless (length binds == nbinds) $ throwCError pos' "Number of arguments differ"
-       
-        expr <- case nbinds of
-         0 -> do
-           unless (length cur == 1) $ throwCError pos "Conflicting definitions"
-           desugarExpr exp1
-         _ -> do
-           ivars <- mapM (const genTemp) [1..nbinds]
-           requireTuple nbinds
-           let tname = ValLit $ tupleName nbinds
-               iargs = foldr (\n f -> intAnn pos . Abs n . f) id ivars
-               scrut = foldl (\e n -> intAnn pos $ App e (intAnn pos $ Var n)) (intAnn pos $ Lit tname) ivars
-           cases <- forM cur $ \(Ann _ (LBind _ binds' expr')) -> do
-             binds <- mapM desugarPat binds'
-             expr <- desugarExpr expr'
-             return (intAnn pos $ PCon tname binds, expr)
-           return $ iargs $ intAnn pos $ Case scrut cases
+  let vals :: Map NQName NQExpr -> [(Name, (Pos, [HsPat Pos], HsExpr Pos))] -> Desugar (Map NQName NQExpr)
+      vals exs [] = return exs
+      vals exs ds@((name, (pos, length -> nbinds, _)):_) = do
+        let nname = NQName name
+            ann = maybeToList $ M.lookup name anns
+            (cur, next) = span ((== name) . fst) ds
+        when (nname `M.member` exs) $ throwCError pos "Duplicate let binding"
 
-        let fun x = Ann (pos, ann) $ Let (fmap NQName name) expr x
-        restfun <- addVal (S.insert name exs) next
-        return $ restfun . fun
+        ivars <- mapM (const genTemp) [1..nbinds]
+        requireTuple nbinds
+        let tname = tupleName nbinds
+            iargs = foldr (\n f -> intAnn pos . Abs n . f) id ivars
+            scrut = foldl (\e n -> intAnn pos $ App e (intAnn pos $ Var n)) (intAnn pos $ Lit tname) ivars
+        cases <- forM cur $ \(_, (_, binds', expr')) -> do
+          binds <- mapM desugarPat binds'
+          expr <- desugarExpr expr'
+          return (intAnn pos $ PCon tname binds, expr)
+        let (Ann _ expr) = iargs $ intAnn pos $ Case scrut cases
+        vals (M.insert nname (Ann (pos, ann) expr) exs) next
 
-  addVal S.empty $ filter (has $ annval._LBind) defs
+  defs' <- vals M.empty [ (name, (pos, pats, expr)) | Ann pos (LBind name pats expr) <- defs ]
+  return $ intAnn tpos . Let defs'
 
 tupleName :: Int -> Name
 tupleName 0 = "()"
@@ -88,22 +88,25 @@ makeTuple n = decl
   where name = tupleName n
         vars = map tempNum [1..n]
 
-        ann = Ann (Pos 0 0)
-        decl = ann $ TyDecl (TyLit name) vars constrs
-        constrs = [ann $ TyCon (ValLit name) tvars]
+        ann = Ann ipos
+        decl = ann $ TyDecl name vars constrs
+        constrs = [ann $ TyCon name tvars]
         tvars = map (ann . TVar) vars
 
 desugar :: HsTopsP -> Compiler Desugared
 desugar defs = do
   ((tys, expr), tups) <- runStateT desugar' S.empty
   let tys' = foldr (I.insert . makeTuple) tys $ S.toList tups
-  return Program { progTypes = tys'
+      tys'' = tys' `I.union` I.map (metamap .~ ipos) builtinTypes
+  return Program { progTypes = tys''
                  , progExpr = expr
                  }
 
   where desugar' :: Desugar (NQTypes, NQExpr)
         desugar' = do
           tys <- indexVals $ map (view splitKey) $ defs^..traverse._TEData
-          exprfun <- desugarLet $ defs^..traverse._TELet
-          let expr = exprfun $ intAnn (Pos 0 0) $ Var $ ValVar (NQName "main")
+          exprfun <- desugarLet (Pos 0 0) $ defs^..traverse._TELet
+          let iexpr = exprfun $ intAnn ipos $ Var $ NQName "main"
+              prelude = M.mapKeys NQName $ M.mapWithKey (\n t -> Ann (ipos, [t & metamap .~ ipos]) $ Builtin n) builtins
+              expr = Ann (ipos, [Ann ipos $ TLit intType]) $ Let prelude iexpr
           return (tys, expr)

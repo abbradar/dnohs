@@ -1,0 +1,15 @@
+data List a = Cons a (List a) | Nil
+
+map _ Nil = Nil
+map f (Cons h t) = Cons (f h) (map f t)
+
+data Nat = Z | S Nat           
+
+natToInt :: Nat -> Int
+natToInt Z = 0
+natToInt (S n) = add 1 (natToInt n)
+
+head :: List a -> a
+head (Cons h _) = h
+
+main = natToInt (head (map S (Cons Z (Cons (S Z) Nil))))

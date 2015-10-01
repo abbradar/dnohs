@@ -1,34 +1,27 @@
-{ nixpkgs ? import <nixpkgs> {}, compiler ? "ghc7101" }:
+{ nixpkgs ? import <nixpkgs> {}, compiler ? "default" }:
 
 let
 
   inherit (nixpkgs) pkgs;
 
-  f = { mkDerivation, alex, array, base, bytestring, containers
-      , happy, lens, mtl, stdenv, text, transformers, data-default-generics
-      , wl-pprint-text, aeson, aeson-pretty
-      }:
-      mkDerivation {
-        pname = "dnohs";
-        version = "0.1.0.0";
-        src = ./.;
-        isLibrary = false;
-        isExecutable = true;
-        buildDepends = [
-          array base bytestring containers lens mtl text transformers
-          data-default-generics wl-pprint-text aeson aeson-pretty
-        ];
-        buildTools = [ alex happy ];
-        license = stdenv.lib.licenses.bsd3;
-      };
+  haskellPackages' = if compiler == "default"
+                        then pkgs.haskellPackages
+                        else pkgs.haskell.packages.${compiler};
 
-  hspkgs = pkgs.haskell.packages.${compiler}.override {
+  lib = pkgs.haskell.lib;
+
+  haskellPackages = haskellPackages'.override {
     overrides = self: super: {
-      alex = self.callPackage ./alex.nix { alex = super.alex; };
+      alex = lib.overrideCabal (self.callPackage ./alex.nix { }) (drv: {
+        buildTools = drv.buildTools or [] ++ [ self.happy super.alex ];
+      });
+      llvm-general = super.llvm-general.override {
+        llvm-config = pkgs.llvm_34.override { debugVersion = true; };
+      };
     };
   };
 
-  drv = hspkgs.callPackage f {};
+  drv = haskellPackages.callPackage ./default.nix {};
 
 in
 
