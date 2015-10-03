@@ -20,13 +20,11 @@ import LLVM.General.AST.Type (i1, i8, ptr)
 import LLVM.General.AST.Global
 import qualified LLVM.General.AST.Global as G
 import LLVM.General.AST.IntegerPredicate
-import Debug.Trace
 
 import qualified Data.IndexedSet as I
 import Core.Types (TempVar(..), Ann'(..), Pat'(..), Expr'(..), TyDecl'(..), TyCon'(..), Program(..))
 import Core.Typed
 import Core.Unique
-import Core.Pretty (showP)
 import Codegen.Utils
 
 data Constr = Constr { conId :: Integer
@@ -262,7 +260,7 @@ builtinDefinitions = do
 
         build :: [String] -> String -> Set Name -> DefGenerator [BasicBlock]
         build (h:t) aname args = genAbs' h aname args $ build t
-        build [] aname _ = do
+        build [] _ _ = do
           blockId <- genTemp
           cmds <- execWriterT $ do
             storage <- alloc thunks $ sizeof' (ptr thunk) (conArgs info)
@@ -323,18 +321,6 @@ builtinDefinitions = do
     let x = "a"
         y = "b"
     blocks <- genAbs' x "seq" S.empty $ genAbs'' y $ \_ _ -> do
-      let getInt :: Name -> Name -> DefGenerator (Name, Name, [BasicBlock])
-          getInt startId n = do
-            (loadId, fblocks) <- force startId n
-            (nR, loadCmds) <- runWriterT $ do
-              nV <- getThunkVal int n
-              nR <- genTemp
-              tell [ nR := load' (local (ptr int) nV) ]
-              return nR
-            nextId <- genTemp
-            let loadBlock = brBlock loadId loadCmds nextId
-            return (nR, nextId, fblocks ++ [loadBlock])
-
       startId <- genTemp
       (forceId, f1blocks) <- force startId (Name x)
       (finId, f2blocks) <- force forceId (Name y)

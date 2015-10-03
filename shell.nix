@@ -18,11 +18,10 @@ let
       llvm-general = super.llvm-general.override {
         llvm-config = pkgs.llvm_34.override { debugVersion = true; };
       };
+      drv = lib.addBuildTool (self.callPackage ./default.nix {}) self.cabal-install;
     };
   };
 
-  drv = haskellPackages.callPackage ./default.nix {};
-
 in
 
-  if pkgs.lib.inNixShell then drv.env else drv
+  if pkgs.lib.inNixShell then haskellPackages.drv.env else haskellPackages.drv
